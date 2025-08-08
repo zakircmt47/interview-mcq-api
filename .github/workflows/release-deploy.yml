@@ -7,12 +7,12 @@ on:
 
 env:
   SHARE_PATH: '\\103.119.101.158\wwwroot'
-  APP_NAME: 'MyDotNetApp'
+  APP_NAME: 'interview-mcq-api'
   DEPLOY_DIR: 'deploy_${{ github.run_number }}'
 
 jobs:
   build:
-    runs-on: windows-latest  # Windows needed for SMB access
+    runs-on: windows-latest
 
     steps:
     - name: Checkout code
@@ -24,10 +24,12 @@ jobs:
         dotnet-version: '6.0.x'
 
     - name: Restore dependencies
-      run: dotnet restore
+      run: dotnet restore KowQuestAndAns.sln
+      working-directory: ${{ github.workspace }}
 
     - name: Build Release
-      run: dotnet publish -c Release -o ./publish --no-restore
+      run: dotnet publish -c Release -o ./publish --no-restore KowQuestAndAns.sln
+      working-directory: ${{ github.workspace }}
 
     - name: Create deployment package
       run: |
@@ -86,7 +88,7 @@ jobs:
 
     - name: Verify deployment
       run: |
-        $testFile = "${{ env.SHARE_PATH }}\${{ env.APP_NAME }}\appsettings.json"  # Change to your key file
+        $testFile = "${{ env.SHARE_PATH }}\${{ env.APP_NAME }}\appsettings.json"
         if (-not (Test-Path $testFile)) {
           Write-Error "Deployment verification failed - key file not found"
           exit 1
