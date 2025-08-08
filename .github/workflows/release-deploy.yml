@@ -43,8 +43,9 @@ jobs:
       run: |
         $version = "$(Get-Date -Format 'yyyyMMdd')-${{ github.run_number }}"
         $zipName = "${{ env.APP_NAME }}_$version.zip"
-        Compress-Archive -Path "${{ github.workspace }}/publish/*" -DestinationPath $zipName
+        Compress-Archive -Path "${{ github.workspace }}/publish/*" -DestinationPath $zipName -Force
         echo "ZIP_NAME=$zipName" >> $env:GITHUB_ENV
+        echo "ZIP_PATH=${{ github.workspace }}/$zipName" >> $env:GITHUB_ENV
       working-directory: ${{ github.workspace }}
       shell: powershell
 
@@ -66,42 +67,61 @@ jobs:
         name: release-package
         path: ${{ github.workspace }}
 
-    - name: Connect to SMB share
+    - name: Deploy to SMB share
       run: |
-        $securePassword = ConvertTo-SecureString "${{ secrets.SMB_PASSWORD }}" -AsPlainText -Force
-        $credential = New-Object System.Management.Automation.PSCredential ("${{ secrets.SMB_USERNAME }}", $securePassword)
-        New-PSDrive -Name "DeployDrive" -PSProvider "FileSystem" -Root "${{ env.SHARE_PATH }}" -Credential $credential -Persist
+        try {
+            # Connect to SMB share
+            $securePassword = ConvertTo-SecureString "${{ secrets.SMB_PASSWORD }}" -AsPlainText -Force
+            $credential = New-Object System.Management.Automation.PSCredential ("${{ secrets.SMB_USERNAME }}", $securePassword)
+            New-PSDrive -Name "DeployDrive" -PSProvider "FileSystem" -Root "${{ env.SHARE_PATH }}" -Credential $credential -Persist
+
+            # Set paths
+            $backupDir = "DeployDrive:\backups\${{ env.DEPLOY_DIR }}"
+            $targetDir = "DeployDrive:\${{ env.APP_NAME }}"
+            $zipPath = "${{ github.workspace }}\${{ env.APP_NAME }}_*.zip"
+            
+            # Verify zip exists
+            if (-not (Test-Path $zipPath)) {
+                throw "Zip file not found at $zipPath"
+            }
+
+            # Create backup
+            New-Item -ItemType Directory -Path $backupDir -Force
+            if (Test-Path $targetDir) {
+                Copy-Item -Path "$targetDir\*" -Destination $backupDir -Recurse -Force
+            }
+
+            # Clean target directory
+            if (Test-Path $targetDir) {
+                Remove-Item "$targetDir\*" -Recurse -Force
+            }
+            else {
+                New-Item -ItemType Directory -Path $targetDir -Force
+            }
+
+            # Deploy new version
+            Expand-Archive -Path $zipPath -DestinationPath $targetDir -Force
+
+            # Verify deployment
+            $testFile = "$targetDir\appsettings.json"
+            if (-not (Test-Path $testFile)) {
+                throw "Deployment verification failed - appsettings.json not found"
+            }
+
+            Write-Output "Deployment completed successfully to $targetDir"
+        }
+        catch {
+            Write-Error "Deployment failed: $_"
+            exit 1
+        }
+        finally {
+            # Cleanup
+            if (Get-PSDrive -Name "DeployDrive" -ErrorAction SilentlyContinue) {
+                Remove-PSDrive -Name "DeployDrive" -Force
+            }
+            Remove-Item $zipPath -Force -ErrorAction SilentlyContinue
+        }
       shell: powershell
       env:
         SMB_USERNAME: ${{ secrets.SMB_USERNAME }}
         SMB_PASSWORD: ${{ secrets.SMB_PASSWORD }}
-
-    - name: Create backup
-      run: |
-        $backupDir = "DeployDrive:\backups\${{ env.DEPLOY_DIR }}"
-        New-Item -ItemType Directory -Path $backupDir -Force
-        Copy-Item -Path "DeployDrive:\${{ env.APP_NAME }}\*" -Destination $backupDir -Recurse -Force -ErrorAction SilentlyContinue
-      shell: powershell
-
-    - name: Deploy new version
-      run: |
-        $targetDir = "DeployDrive:\${{ env.APP_NAME }}"
-        New-Item -ItemType Directory -Path $targetDir -Force
-        Expand-Archive -Path "${{ github.workspace }}/${{ env.APP_NAME }}_*.zip" -DestinationPath $targetDir -Force
-      shell: powershell
-
-    - name: Clean up
-      run: |
-        Remove-PSDrive -Name "DeployDrive" -Force
-        Remove-Item "${{ github.workspace }}/${{ env.APP_NAME }}_*.zip" -Force
-      shell: powershell
-
-    - name: Verify deployment
-      run: |
-        $testFile = "${{ env.SHARE_PATH }}\${{ env.APP_NAME }}\appsettings.json"
-        if (-not (Test-Path $testFile)) {
-          Write-Error "Deployment verification failed - key file not found"
-          exit 1
-        }
-        Write-Output "Deployment verified successfully"
-      shell: powershell
