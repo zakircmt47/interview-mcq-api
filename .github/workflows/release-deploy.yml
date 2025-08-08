@@ -9,7 +9,7 @@ env:
   SHARE_PATH: '\\103.119.101.158\wwwroot'
   APP_NAME: 'interview-mcq-api'
   DEPLOY_DIR: 'deploy_${{ github.run_number }}'
-  PROJECT_DIR: 'interview-mcq-api/interview-mcq-api/KowQuestAndAns'
+  PROJECT_DIR: 'KowQuestAndAns/KowQuestAndAns'  # Matches your local structure
 
 jobs:
   build:
@@ -29,14 +29,8 @@ jobs:
       working-directory: ${{ github.workspace }}/${{ env.PROJECT_DIR }}
 
     - name: Build Release
-      run: dotnet publish -c Release -o ./publish --no-restore KowQuestAndAns.sln
+      run: dotnet publish -c Release -o ../../publish --no-restore KowQuestAndAns.sln
       working-directory: ${{ github.workspace }}/${{ env.PROJECT_DIR }}
-
-    - name: Move publish output to root
-      run: |
-        Move-Item -Path ./publish -Destination "${{ github.workspace }}/publish" -Force
-      working-directory: ${{ github.workspace }}/${{ env.PROJECT_DIR }}
-      shell: powershell
 
     - name: Create deployment package
       run: |
