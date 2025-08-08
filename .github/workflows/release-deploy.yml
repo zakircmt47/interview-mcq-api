@@ -1,0 +1,95 @@
+name: Build and Deploy to SMB Share
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+env:
+  SHARE_PATH: '\\103.119.101.158\wwwroot'
+  APP_NAME: 'MyDotNetApp'
+  DEPLOY_DIR: 'deploy_${{ github.run_number }}'
+
+jobs:
+  build:
+    runs-on: windows-latest  # Windows needed for SMB access
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: '6.0.x'
+
+    - name: Restore dependencies
+      run: dotnet restore
+
+    - name: Build Release
+      run: dotnet publish -c Release -o ./publish --no-restore
+
+    - name: Create deployment package
+      run: |
+        $version = "$(Get-Date -Format 'yyyyMMdd')-${{ github.run_number }}"
+        $zipName = "${{ env.APP_NAME }}_$version.zip"
+        Compress-Archive -Path ./publish/* -DestinationPath $zipName
+        echo "ZIP_NAME=$zipName" >> $env:GITHUB_ENV
+      shell: powershell
+
+    - name: Upload artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: release-package
+        path: ${{ env.APP_NAME }}_*.zip
+
+  deploy:
+    needs: build
+    runs-on: windows-latest
+    environment: production
+
+    steps:
+    - name: Download artifact
+      uses: actions/download-artifact@v3
+      with:
+        name: release-package
+
+    - name: Connect to SMB share
+      run: |
+        $securePassword = ConvertTo-SecureString "${{ secrets.SMB_PASSWORD }}" -AsPlainText -Force
+        $credential = New-Object System.Management.Automation.PSCredential ("${{ secrets.SMB_USERNAME }}", $securePassword)
+        New-PSDrive -Name "DeployDrive" -PSProvider "FileSystem" -Root "${{ env.SHARE_PATH }}" -Credential $credential -Persist
+      shell: powershell
+      env:
+        SMB_USERNAME: ${{ secrets.SMB_USERNAME }}
+        SMB_PASSWORD: ${{ secrets.SMB_PASSWORD }}
+
+    - name: Create backup
+      run: |
+        $backupDir = "DeployDrive:\backups\${{ env.DEPLOY_DIR }}"
+        New-Item -ItemType Directory -Path $backupDir -Force
+        Copy-Item -Path "DeployDrive:\${{ env.APP_NAME }}\*" -Destination $backupDir -Recurse -Force -ErrorAction SilentlyContinue
+      shell: powershell
+
+    - name: Deploy new version
+      run: |
+        $targetDir = "DeployDrive:\${{ env.APP_NAME }}"
+        New-Item -ItemType Directory -Path $targetDir -Force
+        Expand-Archive -Path "${{ env.APP_NAME }}_*.zip" -DestinationPath $targetDir -Force
+      shell: powershell
+
+    - name: Clean up
+      run: |
+        Remove-PSDrive -Name "DeployDrive" -Force
+        Remove-Item "${{ env.APP_NAME }}_*.zip" -Force
+      shell: powershell
+
+    - name: Verify deployment
+      run: |
+        $testFile = "${{ env.SHARE_PATH }}\${{ env.APP_NAME }}\appsettings.json"  # Change to your key file
+        if (-not (Test-Path $testFile)) {
+          Write-Error "Deployment verification failed - key file not found"
+          exit 1
+        }
+        Write-Output "Deployment verified successfully"
+      shell: powershell
