@@ -9,7 +9,6 @@ env:
   SHARE_PATH: '\\103.119.101.158\wwwroot'
   APP_NAME: 'interview-mcq-api'
   DEPLOY_DIR: 'deploy_${{ github.run_number }}'
-  PROJECT_DIR: 'KowQuestAndAns\KowQuestAndAns'  # Using Windows-style backslashes
 
 jobs:
   build:
@@ -28,18 +27,18 @@ jobs:
       run: |
         Write-Output "Current directory: $(Get-Location)"
         dir
-        dir KowQuestAndAns
-        dir KowQuestAndAns\KowQuestAndAns
+        cd interview-mcq-api
+        dir
       shell: powershell
 
     - name: Restore dependencies
       run: dotnet restore KowQuestAndAns.sln
-      working-directory: '${{ github.workspace }}\${{ env.PROJECT_DIR }}'
-      shell: cmd  # Using cmd for better path handling
+      working-directory: '${{ github.workspace }}\interview-mcq-api'
+      shell: cmd
 
     - name: Build Release
-      run: dotnet publish -c Release -o ..\..\publish --no-restore KowQuestAndAns.sln
-      working-directory: '${{ github.workspace }}\${{ env.PROJECT_DIR }}'
+      run: dotnet publish -c Release -o ..\publish --no-restore KowQuestAndAns.sln
+      working-directory: '${{ github.workspace }}\interview-mcq-api'
       shell: cmd
 
     - name: Create deployment package
