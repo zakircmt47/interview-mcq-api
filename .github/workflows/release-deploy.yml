@@ -9,7 +9,7 @@ env:
   SHARE_PATH: '\\103.119.101.158\wwwroot'
   APP_NAME: 'interview-mcq-api'
   DEPLOY_DIR: 'deploy_${{ github.run_number }}'
-  PROJECT_DIR: 'KowQuestAndAns/KowQuestAndAns'  # Matches your local structure
+  PROJECT_DIR: 'KowQuestAndAns\KowQuestAndAns'  # Using Windows-style backslashes
 
 jobs:
   build:
@@ -24,19 +24,29 @@ jobs:
       with:
         dotnet-version: '6.0.x'
 
+    - name: Verify project structure
+      run: |
+        Write-Output "Current directory: $(Get-Location)"
+        dir
+        dir KowQuestAndAns
+        dir KowQuestAndAns\KowQuestAndAns
+      shell: powershell
+
     - name: Restore dependencies
       run: dotnet restore KowQuestAndAns.sln
-      working-directory: ${{ github.workspace }}/${{ env.PROJECT_DIR }}
+      working-directory: '${{ github.workspace }}\${{ env.PROJECT_DIR }}'
+      shell: cmd  # Using cmd for better path handling
 
     - name: Build Release
-      run: dotnet publish -c Release -o ../../publish --no-restore KowQuestAndAns.sln
-      working-directory: ${{ github.workspace }}/${{ env.PROJECT_DIR }}
+      run: dotnet publish -c Release -o ..\..\publish --no-restore KowQuestAndAns.sln
+      working-directory: '${{ github.workspace }}\${{ env.PROJECT_DIR }}'
+      shell: cmd
 
     - name: Create deployment package
       run: |
         $version = "$(Get-Date -Format 'yyyyMMdd')-${{ github.run_number }}"
         $zipName = "${{ env.APP_NAME }}_$version.zip"
-        Compress-Archive -Path "${{ github.workspace }}/publish/*" -DestinationPath $zipName
+        Compress-Archive -Path "${{ github.workspace }}\publish\*" -DestinationPath $zipName
         echo "ZIP_NAME=$zipName" >> $env:GITHUB_ENV
       working-directory: ${{ github.workspace }}
       shell: powershell
@@ -45,7 +55,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: release-package
-        path: ${{ github.workspace }}/${{ env.APP_NAME }}_*.zip
+        path: '${{ github.workspace }}\${{ env.APP_NAME }}_*.zip'
 
   deploy:
     needs: build
@@ -80,13 +90,13 @@ jobs:
       run: |
         $targetDir = "DeployDrive:\${{ env.APP_NAME }}"
         New-Item -ItemType Directory -Path $targetDir -Force
-        Expand-Archive -Path "${{ github.workspace }}/${{ env.APP_NAME }}_*.zip" -DestinationPath $targetDir -Force
+        Expand-Archive -Path "${{ github.workspace }}\${{ env.APP_NAME }}_*.zip" -DestinationPath $targetDir -Force
       shell: powershell
 
     - name: Clean up
       run: |
         Remove-PSDrive -Name "DeployDrive" -Force
-        Remove-Item "${{ github.workspace }}/${{ env.APP_NAME }}_*.zip" -Force
+        Remove-Item "${{ github.workspace }}\${{ env.APP_NAME }}_*.zip" -Force
       shell: powershell
 
     - name: Verify deployment
